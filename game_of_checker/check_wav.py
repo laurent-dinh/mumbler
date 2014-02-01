@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import cPickle
+import scipy.io.wavfile
 
 """
 The sole purpose of this script is to show that data is plausible and unprocessed.
@@ -64,8 +65,10 @@ try:
     plt.plot(range(len(sentence)), sentence)
     if is_female:
         plt.savefig("that_s_what_she_said.png")
+        scipy.io.wavfile.write("that_s_what_she_said.wav", 16000, sentence)
     else:
         plt.savefig("that_s_what_he_said.png")
+        scipy.io.wavfile.write("that_s_what_he_said.wav", 16000, sentence)
         
     print "Done !"
 except:
