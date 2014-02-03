@@ -16,10 +16,10 @@ print "Done !"
 
 # phonemes
 print "Loading phonemes...", 
-train_phonemes = np.load("/data/lisa/data/timit/readable/train_phn.npy")
+train_phonemes = np.load("/data/lisa/data/timit/readable/train_redux_phn.npy")
 train_sentence_to_phonemes = np.load("/data/lisa/data/timit/readable/train_seq_to_phn.npy")
 
-f = open("/data/lisa/data/timit/readable/phonemes.pkl", "r")
+f = open("/data/lisa/data/timit/readable/reduced_phonemes.pkl", "r")
 phonemes_list = cPickle.load(f)
 f.close()
 print "Done !"
