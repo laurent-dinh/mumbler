@@ -239,8 +239,10 @@ class TIMIT(object):
         phn_l_end = self.__dict__[subset+"_seq_to_phn"][seq_id][1]
         phn_start_end = self.__dict__[subset+"_phn"][phn_l_start:phn_l_end]
         phn_seq = np.zeros_like(wav_seq)
+        # Some timestamp does not correspond to any phoneme so 0 is 
+        # the index for "NO_PHONEME" and the other index are shifted by one
         for (phn_start, phn_end, phn) in phn_start_end:
-            phn_seq[phn_start:phn_end] = phn
+            phn_seq[phn_start:phn_end] = phn+1
         
         # Get the words
         wrd_l_start = self.__dict__[subset+"_seq_to_wrd"][seq_id][0]
@@ -309,8 +311,8 @@ class TIMIT(object):
     def init_markov_frames(self, subset, n_frames_in, frame_length, overlap):
         """
         Given the subset id, the frame length, the overlap between frames and 
-        the number of frames we take as input to predict the next, this methods 
-        initializes the get_markov_frames
+        the number of frames we take as input to predict the next, this method 
+        initializes the get_markov_frames method
         
         """
         self.check_subset_value(subset)
@@ -367,8 +369,10 @@ class TIMIT(object):
         phn_l_end = self.__dict__[subset+"_seq_to_phn"][seq_id][1]
         phn_start_end = self.__dict__[subset+"_phn"][phn_l_start:phn_l_end]
         phn_seq = np.zeros_like(wav_seq)
+        # Some timestamp does not correspond to any phoneme so 0 is 
+        # the index for "NO_PHONEME" and the other index are shifted by one
         for (phn_start, phn_end, phn) in phn_start_end:
-            phn_seq[phn_start:phn_end] = phn
+            phn_seq[phn_start:phn_end] = phn+1
         
         # Get the words
         wrd_l_start = self.__dict__[subset+"_seq_to_wrd"][seq_id][0]
