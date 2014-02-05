@@ -400,7 +400,6 @@ class TIMIT(object):
         
         # Pick the selected segment
         padded_wav_seq = np.zeros((wav_length))
-        import pdb; pdb.set_trace()
         if idx_in_seq < 0:
             padded_wav_seq[-idx_in_seq:] = wav_seq[0:(wav_length+idx_in_seq)]
         else:
