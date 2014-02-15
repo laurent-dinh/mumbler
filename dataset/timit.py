@@ -254,19 +254,6 @@ class TIMIT(object):
         for (wrd_start, wrd_end, wrd) in wrd_start_end:
             wrd_seq[wrd_start:wrd_end] = wrd+1
         
-        # Binary variable announcing the end of the word or phoneme
-        end_phn = np.zeros_like(phn_seq)
-        end_wrd = np.zeros_like(wrd_seq)
-        
-        for i in range(len(phn_seq) - 1):
-            if phn_seq[i] != phn_seq[i+1]:
-                end_phn[i] = 1
-            if wrd_seq[i] != wrd_seq[i+1]:
-                end_wrd[i] = 1
-        
-        end_phn[-1] = 1
-        end_wrd[-1] = 1
-        
         # Find the speaker id
         spkr_id = self.__dict__[subset+"_spkr"][seq_id]
         # Find the speaker info
@@ -285,11 +272,18 @@ class TIMIT(object):
         wrd_seq = scipy.stats.mode(wrd_seq, axis=1)[0].flatten()
         wrd_seq = np.asarray(wrd_seq, dtype='int')
         
-        # Announce the end if and only if it was announced in the current frame
-        end_phn = segment_axis(end_phn, frame_length, overlap)
-        end_phn = end_phn.max(axis=1)
-        end_wrd = segment_axis(end_wrd, frame_length, overlap)
-        end_wrd = end_wrd.max(axis=1)
+        # Binary variable announcing the end of the word or phoneme
+        end_phn = np.zeros_like(phn_seq)
+        end_wrd = np.zeros_like(wrd_seq)
+        
+        for i in range(len(phn_seq) - 1):
+            if phn_seq[i] != phn_seq[i+1]:
+                end_phn[i] = 1
+            if wrd_seq[i] != wrd_seq[i+1]:
+                end_wrd[i] = 1
+        
+        end_phn[-1] = 1
+        end_wrd[-1] = 1
         
         return [wav_seq, phn_seq, end_phn, wrd_seq, end_wrd, spkr_info]
     
@@ -335,6 +329,8 @@ class TIMIT(object):
                                     np.zeros((actual_seq_length.shape[0] + 1))
         self.__dict__[subset+"_intervals_seq"][1:] = \
                                     np.cumsum(actual_seq_length)
+        self.__dict__[subset+"_intervals_seq"] = \
+                np.asarray(self.__dict__[subset+"_intervals_seq"], dtype='int')
     
     def get_markov_frames(self, subset, id):
         """
@@ -384,19 +380,6 @@ class TIMIT(object):
         for (wrd_start, wrd_end, wrd) in wrd_start_end:
             wrd_seq[wrd_start:wrd_end] = wrd+1
         
-        # Binary variable announcing the end of the word or phoneme
-        end_phn = np.zeros_like(phn_seq)
-        end_wrd = np.zeros_like(wrd_seq)
-        
-        for i in range(len(phn_seq) - 1):
-            if phn_seq[i] != phn_seq[i+1]:
-                end_phn[i] = 1
-            if wrd_seq[i] != wrd_seq[i+1]:
-                end_wrd[i] = 1
-        
-        end_phn[-1] = 1
-        end_wrd[-1] = 1
-        
         # Find the speaker id
         spkr_id = self.__dict__[subset+"_spkr"][seq_id]
         # Find the speaker info
@@ -434,11 +417,18 @@ class TIMIT(object):
         wrd_seq = scipy.stats.mode(wrd_seq, axis=1)[0].flatten()
         wrd_seq = np.asarray(wrd_seq, dtype='int')
         
-        # Announce the end if and only if it was announced in the current frame
-        end_phn = segment_axis(end_phn, frame_length, overlap)
-        end_phn = end_phn.max(axis=1)
-        end_wrd = segment_axis(end_wrd, frame_length, overlap)
-        end_wrd = end_wrd.max(axis=1)
+        # Binary variable announcing the end of the word or phoneme
+        end_phn = np.zeros_like(phn_seq)
+        end_wrd = np.zeros_like(wrd_seq)
+        
+        for i in range(len(phn_seq) - 1):
+            if phn_seq[i] != phn_seq[i+1]:
+                end_phn[i] = 1
+            if wrd_seq[i] != wrd_seq[i+1]:
+                end_wrd[i] = 1
+        
+        end_phn[-1] = 1
+        end_wrd[-1] = 1 
         
         # Put names on the output
         input_frames = wav_seq[:-1]
