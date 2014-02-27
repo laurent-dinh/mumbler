@@ -5,14 +5,17 @@ import cPickle
 from exceptions import *
 from segmentaxis import segment_axis
 import scipy.stats
+import pdb
+import collections
+
 
 class TIMIT(object):
     """
     This class will encapsulate the interactions that we will have with TIMIT.
     You should have the environment variable MUMBLER_DATA_PATH set. One way to 
     do this is to put 'export MUMBLER_DATA_PATH=/path/to/your/datasets/folder/' 
-    in your .bashrc file so that $MUMBLER_DATA_PATH/readable_timit link to 
-    /data/lisa/data/timit/readable
+    in your .bashrc file so that $MUMBLER_DATA_PATH/timit_concat link to 
+    /data/lisatmp/dinhlaur/timit_concat
     
     """
     def __init__(self, mmap_mode = None):
@@ -20,7 +23,7 @@ class TIMIT(object):
         Initialize the TIMIT class. 
         """
         timit_path = os.path.join(os.environ["MUMBLER_DATA_PATH"], \
-                                  "readable_timit")
+                                  "timit_concat")
         
         if os.path.isdir(timit_path):
             self.timit_path = timit_path
@@ -32,13 +35,15 @@ class TIMIT(object):
         self.has_test = False
         
         spkrinfo_path = os.path.join(self.timit_path, "spkrinfo.npy")
-        phns_path = os.path.join(self.timit_path, "reduced_phonemes.pkl")
+        phonemes_path = os.path.join(self.timit_path, "phonemes.pkl")
+        phones_path = os.path.join(self.timit_path, "phones.pkl")
         wrds_path = os.path.join(self.timit_path, "words.pkl")
         spkrfeat_path = os.path.join(self.timit_path, "spkr_feature_names.pkl")
         spkrid_path = os.path.join(self.timit_path, "speakers_ids.pkl")
+        shuffling_path = os.path.join(self.timit_path, "shuffling.npy")
         
-        for p in [spkrinfo_path, wrds_path, phns_path, spkrfeat_path, \
-                  spkrid_path]:
+        for p in [spkrinfo_path, wrds_path, phones_path, phonemes_path, \
+                  spkrfeat_path, spkrid_path, shuffling_path]:
             if not os.path.isfile(p):
                 raise IOError(p + " is not a valid path !")
         
@@ -46,14 +51,13 @@ class TIMIT(object):
         print "Loading speaker information...", 
         self.spkrinfo = np.load(spkrinfo_path).tolist().toarray()
         print "Done !"
-        # print str(self.spkrinfo.shape[0]) + " different speakers."
         
         print "Loading speakers list...", 
         self.spkrid = cPickle.load(open(spkrid_path, "r"))
         print "Done !"
         print str(len(self.spkrid)) + " different speakers."
         
-        print "Loading speakers list...", 
+        print "Loading speakers freatures...", 
         self.spkrfeat = cPickle.load(open(spkrfeat_path, "r"))
         print "Done !"
         print str(len(self.spkrfeat)) + " different features per speaker."
@@ -66,9 +70,25 @@ class TIMIT(object):
         
         # Phonemes
         print "Loading phonemes list...", 
-        self.phonemes = np.load(open(phns_path, "r"))
+        self.phonemes = np.load(open(phonemes_path, "r"))
         print "Done !"
         print str(len(self.phonemes)) + " different phonemes."
+        
+        # Phones
+        print "Loading phones list...", 
+        self.phones = np.load(open(phones_path, "r"))
+        print "Done !"
+        print str(len(self.phones)) + " different phones."
+        
+        # Shuffling
+        print "Loading shuffling...", 
+        self.shuffling = np.load(open(shuffling_path, "r"))
+        self.invert_shuffling = np.argsort(self.shuffling)
+        print "Done !"
+        
+        self.shuffle_seq = True
+         
+        self.mode = None
         
         
     def load(self, subset):
@@ -83,20 +103,22 @@ class TIMIT(object):
         print "Loading dataset subset."
         # Build paths
         print "Building paths...", 
-        raw_wav_path = os.path.join(self.timit_path, subset+"_x_raw.npy")
-        phn_path = os.path.join(self.timit_path, subset+"_redux_phn.npy")
-        seq_to_phn_path = os.path.join(self.timit_path, \
-                                       subset+"_seq_to_phn.npy")
-        wrd_path = os.path.join(self.timit_path, subset+"_wrd.npy")
-        seq_to_wrd_path = os.path.join(self.timit_path, \
-                                       subset+"_seq_to_wrd.npy")
-        spkr_path = os.path.join(self.timit_path, subset+"_spkr.npy")
+        wav_path = os.path.join(self.timit_path, subset+"_wav.npy")
+        intervals_path = os.path.join(self.timit_path, subset+"_intervals.npy")
+        phones_path = os.path.join(self.timit_path, subset+"_phones.npy")
+        phonemes_path = os.path.join(self.timit_path, subset+"_phonemes.npy")
+        words_path = os.path.join(self.timit_path, subset+"_words.npy")
+        words_intervals_path = os.path.join(self.timit_path, \
+                                subset+"_words_intervals_by_seq.npy")
+        seq_to_words_path = os.path.join(self.timit_path, \
+                                       subset+"_seq_to_words.npy")
+        speakers_path = os.path.join(self.timit_path, subset+"_speakers.npy")
         print "Done !"
         
         # Checking the validity of the paths
         print "Checking path validity...", 
-        for p in [raw_wav_path, phn_path, seq_to_phn_path, wrd_path, \
-                  seq_to_wrd_path, spkr_path]:
+        for p in [wav_path, phones_path, phonemes_path, intervals_path, \
+                  words_intervals_path, seq_to_words_path, speakers_path]:
             if not os.path.isfile(p):
                 raise IOError(p + " is not a valid path !")
         
@@ -104,44 +126,56 @@ class TIMIT(object):
         
         # Acoustic samples
         print "Loading accoustic samples...", 
-        raw_wav = np.load(raw_wav_path)
-        raw_wav_len = map(lambda x:len(x), raw_wav)
+        wav = np.load(wav_path, "r")
+        intervals = np.load(intervals_path)
         print "Done !"
-        print str(raw_wav.shape[0]) + " sentences."
+        print str(intervals.shape[0] -1) + " sentences."
+        
+        print "Compute normalizers...", 
+        max_abs = max(np.max(wav), -np.min(wav))
+        std = np.std(wav)
+        print "Done !"
+        print "Maximum amplitude:", max_abs
+        print "Standard deviation: ", std
         
         # Side information
         ## Phonemes
         print "Loading phonemes...", 
-        phn = np.load(phn_path) 
-        seq_to_phn = np.load(seq_to_phn_path)
+        phones = np.load(phones_path, "r")
+        phonemes = np.load(phonemes_path, "r") 
         print "Done !"
         
         ## Words
         print "Loading words...", 
-        wrd = np.load(wrd_path) 
-        seq_to_wrd = np.load(seq_to_wrd_path)
+        words = np.load(words_path, "r") 
+        words_intervals = np.load(words_intervals_path, "r") 
+        seq_to_words = np.load(seq_to_words_path, "r") 
         print "Done !"
         
         ## Speaker information
         print "Loading speaker information...", 
-        spkr_id = np.asarray(np.load(spkr_path), 'int')
+        speaker_id = np.asarray(np.load(speakers_path), 'int')
         print "Done !"
         
         
         data = {}
-        data[subset+"_raw_wav"] = raw_wav
-        data[subset+"_raw_wav_len"] = raw_wav_len
-        data[subset+"_n_seq"] = raw_wav.shape[0]
-        data[subset+"_phn"] = phn
-        data[subset+"_seq_to_phn"] = seq_to_phn
-        data[subset+"_wrd"] = wrd
-        data[subset+"_seq_to_wrd"] = seq_to_wrd
-        data[subset+"_spkr"] = spkr_id
+        data["wav"] = wav
+        data["intervals"] = intervals
+        data["n_seq"] = intervals.shape[0] - 1
+        data["phones"] = phones
+        data["phonemes"] = phonemes
+        data["words"] = words
+        data["words_intervals"] = words_intervals
+        data["seq_to_words"] = seq_to_words
+        data["speaker_id"] = speaker_id
+        data["std"] = std
+        data["max_abs"] = max_abs
         
         # Raise the flag advertising the presence of data
-        data["has_"+subset] = True
+        self.__dict__["has_"+subset] = True
         
-        self.__dict__.update(data)
+        self.__dict__[subset] = {}
+        self.__dict__[subset].update(data)
         
         self.sanity_check(subset)
     
@@ -154,20 +188,22 @@ class TIMIT(object):
         self.check_subset_presence(subset)
         
         
-        del self.__dict__[subset+"_raw_wav"]
-        del self.__dict__[subset+"_raw_wav_len"]
-        del self.__dict__[subset+"_n_seq"]
-        del self.__dict__[subset+"_phn"]
-        del self.__dict__[subset+"_seq_to_phn"]
-        del self.__dict__[subset+"_wrd"]
-        del self.__dict__[subset+"_seq_to_wrd"]
-        del self.__dict__[subset+"_spkr"]
+        del self.__dict__[subset]["wav"]
+        del self.__dict__[subset]["intervals"]
+        del self.__dict__[subset]["n_seq"]
+        del self.__dict__[subset]["phones"]
+        del self.__dict__[subset]["phonemes"]
+        del self.__dict__[subset]["words"]
+        del self.__dict__[subset]["words_intervals"]
+        del self.__dict__[subset]["seq_to_words"]
+        del self.__dict__[subset]["speaker_id"]
+        del self.__dict__[subset]
         
         # Lower the flag advertising the presence of data
         data["has_"+subset] = False
     
     def check_subset_value(self, subset):
-        if subset not in {"train", "valid", "test"}:
+        if subset not in {"train", "test"}:
             raise ValueError("Invalid subset !")
     
     def check_subset_presence(self, subset):
@@ -191,12 +227,11 @@ class TIMIT(object):
         print "Check lengths..."
         short = ["phn", "wrd"]
         long = ["phonemes", "words"]
-        for i in range(len(short)):
-            if self.__dict__[subset+"_seq_to_"+short[i]][-1,-1] == \
-               self.__dict__[subset+"_"+short[i]].shape[0]:
-                print "OK for "+long[i]+"."
-            else:
-                print "KO for "+long[i]+"."
+        if self.__dict__[subset]["seq_to_words"][-1,-1] == \
+                    self.__dict__[subset]["words_intervals"].shape[0]:
+            print "OK for words."
+        else:
+            print "KO for words."
         
         print "Check multinomial constraints..."
         feature_name = ["dialect", "education", "race", "sex"]
@@ -214,7 +249,8 @@ class TIMIT(object):
     
     """
     
-    def get_raw_seq(self, subset, seq_id, frame_length, overlap):
+    def get_raw_seq(self, subset, seq_id, frame_length, overlap, \
+                    shuffling = True):
         """
         Given the id of the subset, the id of the sequence, the frame length and 
         the overlap between frames, this method will return a frames sequence 
@@ -227,65 +263,60 @@ class TIMIT(object):
         self.check_subset_presence(subset)
         
         # Check if the id is valid
-        n_seq = self.__dict__[subset+"_n_seq"]
+        n_seq = self.__dict__[subset]["n_seq"]
         if seq_id >= n_seq:
             raise ValueError("This sequence does not exist.")
         
         # Get the sequence
-        wav_seq = self.__dict__[subset+"_raw_wav"][seq_id]
+        if shuffling:
+            seq_id = self.shuffling[seq_id]
         
-        # Get the phonemes
-        phn_l_start = self.__dict__[subset+"_seq_to_phn"][seq_id][0]
-        phn_l_end = self.__dict__[subset+"_seq_to_phn"][seq_id][1]
-        phn_start_end = self.__dict__[subset+"_phn"][phn_l_start:phn_l_end]
-        phn_seq = np.zeros_like(wav_seq)
-        # Some timestamp does not correspond to any phoneme so 0 is 
-        # the index for "NO_PHONEME" and the other index are shifted by one
-        for (phn_start, phn_end, phn) in phn_start_end:
-            phn_seq[phn_start:phn_end] = phn+1
+        wav_start = self.__dict__[subset]["intervals"][seq_id]
+        wav_end = self.__dict__[subset]["intervals"][seq_id+1]
+        wav = self.__dict__[subset]["wav"][wav_start:wav_end]
         
-        # Get the words
-        wrd_l_start = self.__dict__[subset+"_seq_to_wrd"][seq_id][0]
-        wrd_l_end = self.__dict__[subset+"_seq_to_wrd"][seq_id][1]
-        wrd_start_end = self.__dict__[subset+"_wrd"][wrd_l_start:wrd_l_end]
-        wrd_seq = np.zeros_like(wav_seq)
-        # Some timestamp does not correspond to any word so 0 is 
-        # the index for "NO_WORD" and the other index are shifted by one
-        for (wrd_start, wrd_end, wrd) in wrd_start_end:
-            wrd_seq[wrd_start:wrd_end] = wrd+1
+        # Get the phones, phonemes and words
+        phones = self.__dict__[subset]["phones"][wav_start:wav_end]
+        phonemes = self.__dict__[subset]["phonemes"][wav_start:wav_end]
+        words = self.__dict__[subset]["words"][wav_start:wav_end]
         
         # Find the speaker id
-        spkr_id = self.__dict__[subset+"_spkr"][seq_id]
+        spkr_id = self.__dict__[subset]["speaker_id"][seq_id]
         # Find the speaker info
         spkr_info = self.spkrinfo[spkr_id]
         
         # Segment into frames
-        wav_seq = segment_axis(wav_seq, frame_length, overlap)
+        wav = segment_axis(wav, frame_length, overlap)
         
-        # Take the most occurring phoneme in a sequence
-        phn_seq = segment_axis(phn_seq, frame_length, overlap)
-        phn_seq = scipy.stats.mode(phn_seq, axis=1)[0].flatten()
-        phn_seq = np.asarray(phn_seq, dtype='int')
+        # Take the most occurring phone in a sequence
+        phones = segment_axis(phones, frame_length, overlap)
+        phones = scipy.stats.mode(phones, axis=1)[0].flatten()
+        phones = np.asarray(phones, dtype='int')
+        
+        # Take the most occurring phone in a sequence
+        phonemes = segment_axis(phonemes, frame_length, overlap)
+        phonemes = scipy.stats.mode(phonemes, axis=1)[0].flatten()
+        phonemes = np.asarray(phonemes, dtype='int')
         
         # Take the most occurring word in a sequence
-        wrd_seq = segment_axis(wrd_seq, frame_length, overlap)
-        wrd_seq = scipy.stats.mode(wrd_seq, axis=1)[0].flatten()
-        wrd_seq = np.asarray(wrd_seq, dtype='int')
+        words = segment_axis(words, frame_length, overlap)
+        words = scipy.stats.mode(words, axis=1)[0].flatten()
+        words = np.asarray(words, dtype='int')
         
         # Binary variable announcing the end of the word or phoneme
-        end_phn = np.zeros_like(phn_seq)
-        end_wrd = np.zeros_like(wrd_seq)
+        end_phn = np.zeros_like(phones)
+        end_wrd = np.zeros_like(words)
         
-        for i in range(len(phn_seq) - 1):
-            if phn_seq[i] != phn_seq[i+1]:
+        for i in range(len(words) - 1):
+            if phones[i] != phones[i+1]:
                 end_phn[i] = 1
-            if wrd_seq[i] != wrd_seq[i+1]:
+            if words[i] != words[i+1]:
                 end_wrd[i] = 1
         
         end_phn[-1] = 1
         end_wrd[-1] = 1
         
-        return [wav_seq, phn_seq, end_phn, wrd_seq, end_wrd, spkr_info]
+        return [wav, phones, phonemes, end_phn, words, end_wrd, spkr_info]
     
     def get_n_seq(self, subset):
         """
@@ -295,164 +326,259 @@ class TIMIT(object):
         self.check_subset_value(subset)
         self.check_subset_presence(subset)
         
-        return self.__dict__[subset+"_n_seq"]
+        return self.__dict__[subset]["n_seq"]
     
     """
     This section is about extracting sequences of fixed size. 
     
     """
-    
-    def init_markov_frames(self, subset, n_frames_in, frame_length, overlap):
+    def init_frames_iter(self, subset, n_frames, frame_length, overlap, \
+                        shuffling = True):
         """
-        Given the subset id, the frame length, the overlap between frames and 
-        the number of frames we take as input to predict the next, this method 
-        initializes the get_markov_frames method
+        Given the subset id, the number of frames wanted, the frame length, 
+        the overlap, initialize the associated iterator if need be. 
         
         """
         self.check_subset_value(subset)
         self.check_subset_presence(subset)
         
-        # Compute the required length to build a frame sequence of fixed size
-        wav_length = n_frames_in*(frame_length - overlap) + frame_length
+        # Check if the initialization is needed
+        needed = not hasattr(self, "subset")
+        needed |= not hasattr(self, "n_frames")
+        needed |= not hasattr(self, "frame_length")
+        needed |= not hasattr(self, "overlap")
         
-        # Compute the number of unique frame sequence we can extract from a 
-        # acoustic samples sequence
-        actual_seq_length = np.array(self.__dict__[subset+"_raw_wav_len"]) \
-                            - (frame_length - overlap) + 1
+        if not needed:
+            needed = (self.subset != subset)
+            needed |= (self.n_frames != n_frames)
+            needed |= (self.frame_length != frame_length)
+            needed |= (self.overlap != overlap)
+            needed |= (self.mode != "fixed")
+            needed |= (self.shuffle_seq != shuffling)
         
-        self.__dict__[subset+"_n_frames_in"] = n_frames_in
-        self.__dict__[subset+"_frame_length"] = frame_length
-        self.__dict__[subset+"_overlap"] = overlap
-        self.__dict__[subset+"_wav_length"] = wav_length
+        if needed:
+            self.subset = subset
+            self.n_frames = n_frames
+            self.frame_length = frame_length
+            self.overlap = overlap
+            self.mode = "fixed"
+            self.shuffle_seq = shuffling and (subset == "train")
         
-        self.__dict__[subset+"_intervals_seq"] = \
-                                    np.zeros((actual_seq_length.shape[0] + 1))
-        self.__dict__[subset+"_intervals_seq"][1:] = \
-                                    np.cumsum(actual_seq_length)
-        self.__dict__[subset+"_intervals_seq"] = \
-                np.asarray(self.__dict__[subset+"_intervals_seq"], dtype='int')
-    
-    def get_markov_frames(self, subset, id):
-        """
-        Given the subset and an id, this method returns the list [input_frames, 
-        input_phonemes, input_words, output_phoneme, output_word, spkr_info, 
-        output_frame, ending_phoneme, ending_word]. 
+            # Compute the required length to build a frame sequence of
+            # fixed size
+            self.wav_length_required = (n_frames - 1)*(frame_length - overlap) \
+                                + frame_length
         
-        """
-        assert subset+"_intervals_seq" in self.__dict__.keys()
-        assert id < self.__dict__[subset+"_intervals_seq"][-1]
-        
-        n_frames_in = self.__dict__[subset+"_n_frames_in"]
-        frame_length = self.__dict__[subset+"_frame_length"]
-        overlap = self.__dict__[subset+"_overlap"]
-        wav_length = self.__dict__[subset+"_wav_length"]
-        intervals_seq = self.__dict__[subset+"_intervals_seq"]
-        
-        # Find the acoustic samples sequence we are looking for
-        seq_id = np.digitize([id], intervals_seq) - 1
-        seq_id = seq_id[0]
-        
-        # Find the position in this sequence
-        idx_in_seq = id - intervals_seq[seq_id] - (wav_length - frame_length \
-                     + overlap)
+            # Compute the number of unique frame sequence we can extract
+            # from each acoustic samples sequence
+            lengths = np.copy(self.__dict__[subset]["intervals"])
+            lengths[1:] = lengths[1:] - lengths[:-1]
+            lengths[1:] = lengths[1:] - self.wav_length_required + 1
+            if self.shuffle_seq:
+                lengths[1:] = lengths[1:][self.shuffling]
             
+            if np.any(lengths[1:] <= 0):
+                raise ValueError("A sequence is too short for this framelength value.")
+            
+            frame_seq_intervals = np.cumsum(lengths)
+            self.frame_seq_intervals = np.asarray(frame_seq_intervals, dtype = "int")
+    
+    
+    def get_fixed_size_seq(self, subset, n_frames, frame_length, overlap, ids, \
+                            shuffling = True):
+        """
+        Given the subset id, the number of frames wanted, the frame length, 
+        the overlap, and the ids, return multiple arrays corresponding to
+        a minibatch of frame sequence of fixed size
+        
+        """
+        
+        self.init_frames_iter(subset, n_frames, frame_length, overlap, \
+                                shuffling)
+        if isinstance(ids, collections.Iterable):
+            ids = np.asarray(ids)
+        else:
+            ids = np.array([ids])
+        
+        assert np.all(ids < self.frame_seq_intervals[-1])
         
         # Get the sequence
-        wav_seq = self.__dict__[subset+"_raw_wav"][seq_id]
+        seq_ids = np.digitize(ids, self.frame_seq_intervals) - 1
+        if self.shuffle_seq:
+            seq_ids = self.invert_shuffling[seq_ids]
         
-        # Get the phonemes
-        phn_l_start = self.__dict__[subset+"_seq_to_phn"][seq_id][0]
-        phn_l_end = self.__dict__[subset+"_seq_to_phn"][seq_id][1]
-        phn_start_end = self.__dict__[subset+"_phn"][phn_l_start:phn_l_end]
-        phn_seq = np.zeros_like(wav_seq)
-        # Some timestamp does not correspond to any phoneme so 0 is 
-        # the index for "NO_PHONEME" and the other index are shifted by one
-        for (phn_start, phn_end, phn) in phn_start_end:
-            phn_seq[phn_start:phn_end] = phn+1
+        idx_in_seq = ids - self.__dict__[subset]["intervals"][seq_ids]
+        wav_start = self.__dict__[subset]["intervals"][seq_ids] + idx_in_seq
+        wav_end = wav_start + self.wav_length_required
+        wav_intervals = zip(wav_start,wav_end)
+        indices = map(lambda x:range(x[0],x[1]), wav_intervals)
+        indices = reduce(lambda x,y: x+y, indices)
+        indices = np.array(indices).reshape(ids.shape[0], \
+                    self.wav_length_required)
         
-        # Get the words
-        wrd_l_start = self.__dict__[subset+"_seq_to_wrd"][seq_id][0]
-        wrd_l_end = self.__dict__[subset+"_seq_to_wrd"][seq_id][1]
-        wrd_start_end = self.__dict__[subset+"_wrd"][wrd_l_start:wrd_l_end]
-        wrd_seq = np.zeros_like(wav_seq)
-        # Some timestamp does not correspond to any word so 0 is 
-        # the index for "NO_WORD" and the other index are shifted by one
-        for (wrd_start, wrd_end, wrd) in wrd_start_end:
-            wrd_seq[wrd_start:wrd_end] = wrd+1
+        wav = self.__dict__[subset]["wav"][indices]
+        
+        # Get the phones, phonemes and words
+        phones = self.__dict__[subset]["phones"][indices]
+        phonemes = self.__dict__[subset]["phonemes"][indices]
+        words = self.__dict__[subset]["words"][indices]
         
         # Find the speaker id
-        spkr_id = self.__dict__[subset+"_spkr"][seq_id]
+        spkr_id = self.__dict__[subset]["speaker_id"][seq_ids]
         # Find the speaker info
         spkr_info = self.spkrinfo[spkr_id]
         
-        # Pick the selected segment
-        padded_wav_seq = np.zeros((wav_length))
-        if idx_in_seq < 0:
-            padded_wav_seq[-idx_in_seq:] = wav_seq[0:(wav_length+idx_in_seq)]
-        else:
-            padded_wav_seq = wav_seq[idx_in_seq:(idx_in_seq + wav_length)]
-        
-        padded_phn_seq = np.zeros((wav_length))
-        if idx_in_seq < 0:
-            padded_phn_seq[-idx_in_seq:] = phn_seq[0:(wav_length+idx_in_seq)]
-        else:
-            padded_phn_seq = phn_seq[idx_in_seq:(idx_in_seq + wav_length)]
-        
-        padded_wrd_seq = np.zeros((wav_length))
-        if idx_in_seq < 0:
-            padded_wrd_seq[-idx_in_seq:] = wrd_seq[0:(wav_length+idx_in_seq)]
-        else:
-            padded_wrd_seq = wrd_seq[idx_in_seq:(idx_in_seq + wav_length)]
-        
         # Segment into frames
-        wav_seq = segment_axis(padded_wav_seq, frame_length, overlap)
+        wav = segment_axis(wav, frame_length, overlap, axis=1)
+        # shape (n_ids, n_frames, frame_length)
         
-        # Take the most occurring phoneme in a sequence
-        phn_seq = segment_axis(padded_phn_seq, frame_length, overlap)
-        phn_seq = scipy.stats.mode(phn_seq, axis=1)[0].flatten()
-        phn_seq = np.asarray(phn_seq, dtype='int')
+        # Take the most occurring phone in a sequence
+        phones = segment_axis(phones, frame_length, overlap, axis=1)
+        phones = scipy.stats.mode(phones, axis=2)[0].reshape(ids.shape[0], \
+                    n_frames)
+        phones = np.asarray(phones, dtype='int')
+        
+        # Take the most occurring phone in a sequence
+        phonemes = segment_axis(phonemes, frame_length, overlap, axis=1)
+        phonemes = scipy.stats.mode(phonemes, axis=2)[0].reshape(ids.shape[0], \
+                    n_frames)
+        phonemes = np.asarray(phonemes, dtype='int')
         
         # Take the most occurring word in a sequence
-        wrd_seq = segment_axis(padded_wrd_seq, frame_length, overlap)
-        wrd_seq = scipy.stats.mode(wrd_seq, axis=1)[0].flatten()
-        wrd_seq = np.asarray(wrd_seq, dtype='int')
+        words = segment_axis(words, frame_length, overlap, axis=1)
+        words = scipy.stats.mode(words, axis=2)[0].reshape(ids.shape[0], \
+                    n_frames)
+        words = np.asarray(words, dtype='int')
         
         # Binary variable announcing the end of the word or phoneme
-        end_phn = np.zeros_like(phn_seq)
-        end_wrd = np.zeros_like(wrd_seq)
+        end_phn = np.zeros_like(phones)
+        end_wrd = np.zeros_like(words)
         
-        for i in range(len(phn_seq) - 1):
-            if phn_seq[i] != phn_seq[i+1]:
-                end_phn[i] = 1
-            if wrd_seq[i] != wrd_seq[i+1]:
-                end_wrd[i] = 1
+        end_phn[:,:-1] = np.where(phones[:,:-1] != phones[:,1:], 1, 0)
+        end_wrd[:,:-1] = np.where(words[:,:-1] != words[:,1:], 1, 0)
         
-        end_phn[-1] = 1
-        end_wrd[-1] = 1 
+        return [wav, phones, phonemes, end_phn, words, end_wrd, spkr_info]
         
-        # Put names on the output
-        input_frames = wav_seq[:-1]
-        input_phonemes = phn_seq[:-1]
-        input_words = wrd_seq[:-1]
-        output_phoneme = phn_seq[-1]
-        output_word = wrd_seq[-1]
-        output_frame = wav_seq[-1]
-        ending_phoneme = end_phn[-1]
-        ending_word = end_wrd[-1]
-        
-        return [input_frames, input_phonemes, input_words, output_phoneme, \
-                output_word, spkr_info, output_frame, ending_phoneme, \
-                ending_word]
-
     
-    def get_n_markov_frames(self, subset):
+    def get_n_fixed_size_seq(self, subset, n_frames, frame_length, overlap, \
+                                shuffling = True, end_seq = None):
         """
-        Given the subset id, return the number of frame segments of fixed size 
-        in it.
+        Given the subset id, return the number of fixed size sequences in it.
         
         """
         self.check_subset_value(subset)
         self.check_subset_presence(subset)
-        assert subset+"_intervals_seq" in self.__dict__.keys()
+        self.init_frames_iter(subset, n_frames, frame_length, overlap, shuffling)
         
-        return self.__dict__[subset+"_intervals_seq"][-1]
+        if end_seq is None:
+            end_seq = -1
+        
+        return self.frame_seq_intervals[end_seq]
+    
+    """
+    This section is about extracting sequences for each word. 
+    
+    """
+    def init_words_iter(self, subset, shuffling = True):
+        """
+        Given the subset id, initialize the iterator if need be. 
+        
+        """
+        self.check_subset_value(subset)
+        self.check_subset_presence(subset)
+        
+        # Check if the initialization is needed
+        needed = not hasattr(self, "word_to_seq_intervals")
+        self.mode = "words"
+        
+        if not needed:
+            needed = (self.shuffle_seq != shuffling)
+        
+        self.shuffle_seq = shuffling and (subset == "train")
+         
+        if needed:
+            # Compute the required length to build a frame sequence of
+            # fixed size
+            n_words_per_seq = self.__dict__[subset]["seq_to_words"][:,1] \
+                            - self.__dict__[subset]["seq_to_words"][:,0]
+            
+            if self.shuffle_seq:
+                n_words_per_seq = n_words_per_seq[self.shuffling]
+            
+            self.word_to_seq_intervals = np.zeros((n_words_per_seq.shape[0]+1))
+            self.word_to_seq_intervals[1:] = np.cumsum(n_words_per_seq)
+            self.word_to_seq_intervals = np.asarray(self.word_to_seq_intervals, dtype="int")
+        
+    def get_word_seq(self, subset, frame_length, overlap, id, shuffling = True):
+        """
+        Given the subset id, the number of frames wanted, the frame length, 
+        the overlap and the id, return the associated waveform sequence. 
+        
+        """
+        self.init_words_iter(subset, shuffling)
+        assert id < self.word_to_seq_intervals[-1]
+        
+        # Get the sequence
+        seq_id = np.digitize([id], self.word_to_seq_intervals)[0] - 1
+        if self.shuffle_seq:
+            seq_id = self.invert_shuffling[seq_id]
+        
+        wav_start_in_seq = self.__dict__[subset]["words_intervals"][id, 0]
+        wav_end_in_seq = self.__dict__[subset]["words_intervals"][id, 1]
+        wav_start = self.__dict__[subset]["intervals"][seq_id] \
+                    + wav_start_in_seq
+        wav_end = self.__dict__[subset]["intervals"][seq_id] \
+                    + wav_end_in_seq
+        
+        wav = self.__dict__[subset]["wav"][wav_start:wav_end]
+        
+        # Get the phones, phonemes and words
+        phones = self.__dict__[subset]["phones"][wav_start:wav_end]
+        phonemes = self.__dict__[subset]["phonemes"][wav_start:wav_end]
+        word = self.__dict__[subset]["words_intervals"][id,2]
+        
+        # Find the speaker id
+        spkr_id = self.__dict__[subset]["speaker_id"][seq_id]
+        # Find the speaker info
+        spkr_info = self.spkrinfo[spkr_id]
+        
+        # Segment into frames
+        wav = segment_axis(wav, frame_length, overlap)
+        
+        # Take the most occurring phone in a sequence
+        phones = segment_axis(phones, frame_length, overlap)
+        phones = scipy.stats.mode(phones, axis=1)[0].flatten()
+        phones = np.asarray(phones, dtype='int')
+        
+        # Take the most occurring phone in a sequence
+        phonemes = segment_axis(phonemes, frame_length, overlap)
+        phonemes = scipy.stats.mode(phonemes, axis=1)[0].flatten()
+        phonemes = np.asarray(phonemes, dtype='int')
+        
+        
+        # Binary variable announcing the end of the word or phoneme
+        end_phn = np.zeros_like(phones)
+        
+        for i in range(len(phones) - 1):
+            if phones[i] != phones[i+1]:
+                end_phn[i] = 1
+        
+        end_phn[-1] = 1
+        
+        return [wav, phones, phonemes, end_phn, word, spkr_info]
+        
+    
+    def get_n_words(self, subset, shuffling = True, end_seq = None):
+        """
+        Given the subset id, return the number of sequence in it.
+        
+        """
+        self.check_subset_value(subset)
+        self.check_subset_presence(subset)
+        self.init_words_iter(subset, shuffling)
+        
+        if end_seq is None:
+            end_seq = -1
+
+        return self.word_to_seq_intervals[end_seq]
+    
