@@ -385,7 +385,7 @@ class TIMIT(object):
     
     
     def get_fixed_size_seq(self, subset, n_frames, frame_length, overlap, ids, \
-                            shuffling = True):
+                            shuffling = True, wav_only = False):
         """
         Given the subset id, the number of frames wanted, the frame length, 
         the overlap, and the ids, return multiple arrays corresponding to
@@ -409,56 +409,65 @@ class TIMIT(object):
         
         idx_in_seq = ids - self.__dict__[subset]["intervals"][seq_ids]
         wav_start = self.__dict__[subset]["intervals"][seq_ids] + idx_in_seq
-        wav_end = wav_start + self.wav_length_required
-        wav_intervals = zip(wav_start,wav_end)
-        indices = map(lambda x:range(x[0],x[1]), wav_intervals)
-        indices = reduce(lambda x,y: x+y, indices)
-        indices = np.array(indices).reshape(ids.shape[0], \
-                    self.wav_length_required)
+        # wav_start = wav_start.reshape((wav_start.shape[0],1))
+        # indices = wav_start + np.arange(self.wav_length_required)
         
-        wav = self.__dict__[subset]["wav"][indices]
+        wav = np.zeros((ids.shape[0], self.wav_length_required))
+        for i, idx in enumerate(wav_start):
+            wav[i] = self.__dict__[subset]["wav"][idx:(idx + self.wav_length_required)]
+        # wav = self.__dict__[subset]["wav"][indices]
         
-        # Get the phones, phonemes and words
-        phones = self.__dict__[subset]["phones"][indices]
-        phonemes = self.__dict__[subset]["phonemes"][indices]
-        words = self.__dict__[subset]["words"][indices]
+        if (ids.shape[0]*self.wav_length_required > 100000):
+            print "Waveforms loaded."
         
-        # Find the speaker id
-        spkr_id = self.__dict__[subset]["speaker_id"][seq_ids]
-        # Find the speaker info
-        spkr_info = self.spkrinfo[spkr_id]
+        if not wav_only:
+            # Get the phones, phonemes and words
+            # phones = self.__dict__[subset]["phones"][indices]
+            # phonemes = self.__dict__[subset]["phonemes"][indices]
+            # words = self.__dict__[subset]["words"][indices]
+            
+            phones = np.zeros((ids.shape[0], self.wav_length_required))
+            phonemes = np.zeros((ids.shape[0], self.wav_length_required))
+            words = np.zeros((ids.shape[0], self.wav_length_required))
+            
+            # Find the speaker id
+            spkr_id = self.__dict__[subset]["speaker_id"][seq_ids]
+            # Find the speaker info
+            spkr_info = self.spkrinfo[spkr_id]
         
-        # Segment into frames
-        wav = segment_axis(wav, frame_length, overlap, axis=1)
-        # shape (n_ids, n_frames, frame_length)
+            # Segment into frames
+            wav = segment_axis(wav, frame_length, overlap, axis=1)
+            # shape (n_ids, n_frames, frame_length)
         
-        # Take the most occurring phone in a sequence
-        phones = segment_axis(phones, frame_length, overlap, axis=1)
-        phones = scipy.stats.mode(phones, axis=2)[0].reshape(ids.shape[0], \
-                    n_frames)
-        phones = np.asarray(phones, dtype='int')
+            # Take the most occurring phone in a sequence
+            phones = segment_axis(phones, frame_length, overlap, axis=1)
+            phones = scipy.stats.mode(phones, axis=2)[0].reshape(ids.shape[0], \
+                        n_frames)
+            phones = np.asarray(phones, dtype='int')
         
-        # Take the most occurring phone in a sequence
-        phonemes = segment_axis(phonemes, frame_length, overlap, axis=1)
-        phonemes = scipy.stats.mode(phonemes, axis=2)[0].reshape(ids.shape[0], \
-                    n_frames)
-        phonemes = np.asarray(phonemes, dtype='int')
+            # Take the most occurring phone in a sequence
+            phonemes = segment_axis(phonemes, frame_length, overlap, axis=1)
+            phonemes = scipy.stats.mode(phonemes, axis=2)[0].reshape(ids.shape[0], \
+                        n_frames)
+            phonemes = np.asarray(phonemes, dtype='int')
         
-        # Take the most occurring word in a sequence
-        words = segment_axis(words, frame_length, overlap, axis=1)
-        words = scipy.stats.mode(words, axis=2)[0].reshape(ids.shape[0], \
-                    n_frames)
-        words = np.asarray(words, dtype='int')
+            # Take the most occurring word in a sequence
+            words = segment_axis(words, frame_length, overlap, axis=1)
+            words = scipy.stats.mode(words, axis=2)[0].reshape(ids.shape[0], \
+                        n_frames)
+            words = np.asarray(words, dtype='int')
         
-        # Binary variable announcing the end of the word or phoneme
-        end_phn = np.zeros_like(phones)
-        end_wrd = np.zeros_like(words)
+            # Binary variable announcing the end of the word or phoneme
+            end_phn = np.zeros_like(phones)
+            end_wrd = np.zeros_like(words)
         
-        end_phn[:,:-1] = np.where(phones[:,:-1] != phones[:,1:], 1, 0)
-        end_wrd[:,:-1] = np.where(words[:,:-1] != words[:,1:], 1, 0)
+            end_phn[:,:-1] = np.where(phones[:,:-1] != phones[:,1:], 1, 0)
+            end_wrd[:,:-1] = np.where(words[:,:-1] != words[:,1:], 1, 0)
         
-        return [wav, phones, phonemes, end_phn, words, end_wrd, spkr_info]
+            return [wav, phones, phonemes, end_phn, words, end_wrd, spkr_info]
         
+        else:
+            return [wav]
     
     def get_n_fixed_size_seq(self, subset, n_frames, frame_length, overlap, \
                                 shuffling = True, end_seq = None):
