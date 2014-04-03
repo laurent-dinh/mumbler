@@ -34,7 +34,7 @@ class SGD_momentum(object):
                     print param.name
                     print mparam.name
                 
-                next_momentum = momentum_coeff*mparam - gparam
+                next_momentum = momentum_coeff*mparam - (1 - momentum_coeff)*gparam
                 next_param = param + learning_rate*next_momentum
                 
                 updates[mparam] = T.cast(next_momentum, floatX)
@@ -46,7 +46,7 @@ class SGD_momentum(object):
             
             for (param, gparam, mparam) in zip(self.params, grad_cost,
             self.params_momentum):
-                next_momentum = momentum_coeff*mparam - gparam
+                next_momentum = momentum_coeff*mparam - (1 - momentum_coeff)*gparam
                 if self.mode == "normalized":
                     next_momentum = next_momentum/next_momentum_norm
                 elif self.mode == "clipped":
@@ -60,8 +60,8 @@ class SGD_momentum(object):
                 updates[param] = T.unbroadcast(T.cast(next_param, floatX))
             
         else:
-            next_momentum = momentum_coeff*self.params_momentum - learning_rate*grad_cost
-            next_param = self.params + next_momentum
+            next_momentum = momentum_coeff*self.params_momentum - (1 - momentum_coeff)*grad_cost
+            next_param = self.params + learning_rate*next_momentum
             next_momentum_norm = T.sqrt((next_momentum**2).sum())
             if self.mode == "normalized":
                 assert max_norm is not None

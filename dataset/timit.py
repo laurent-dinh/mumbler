@@ -57,7 +57,7 @@ class TIMIT(object):
         print "Done !"
         print str(len(self.spkrid)) + " different speakers."
         
-        print "Loading speakers freatures...", 
+        print "Loading speakers features...", 
         self.spkrfeat = cPickle.load(open(spkrfeat_path, "r"))
         print "Done !"
         print str(len(self.spkrfeat)) + " different features per speaker."
@@ -112,13 +112,18 @@ class TIMIT(object):
                                 subset+"_words_intervals_by_seq.npy")
         seq_to_words_path = os.path.join(self.timit_path, \
                                        subset+"_seq_to_words.npy")
+        phones_intervals_path = os.path.join(self.timit_path, \
+                                subset+"_phones_intervals_by_seq.npy")
+        seq_to_phones_path = os.path.join(self.timit_path, \
+                                       subset+"_seq_to_phones.npy")
         speakers_path = os.path.join(self.timit_path, subset+"_speakers.npy")
         print "Done !"
         
         # Checking the validity of the paths
         print "Checking path validity...", 
         for p in [wav_path, phones_path, phonemes_path, intervals_path, \
-                  words_intervals_path, seq_to_words_path, speakers_path]:
+                  words_intervals_path, seq_to_words_path, \
+                  phones_intervals_path, seq_to_phones_path, speakers_path]:
             if not os.path.isfile(p):
                 raise IOError(p + " is not a valid path !")
         
@@ -143,6 +148,8 @@ class TIMIT(object):
         print "Loading phonemes...", 
         phones = np.load(phones_path, "r")
         phonemes = np.load(phonemes_path, "r") 
+        phones_intervals = np.load(phones_intervals_path, "r") 
+        seq_to_phones = np.load(seq_to_phones_path, "r") 
         print "Done !"
         
         ## Words
@@ -164,6 +171,8 @@ class TIMIT(object):
         data["n_seq"] = intervals.shape[0] - 1
         data["phones"] = phones
         data["phonemes"] = phonemes
+        data["phones_intervals"] = phones_intervals
+        data["seq_to_phones"] = seq_to_phones
         data["words"] = words
         data["words_intervals"] = words_intervals
         data["seq_to_words"] = seq_to_words
@@ -225,13 +234,20 @@ class TIMIT(object):
             print "KO."
         
         print "Check lengths..."
-        short = ["phn", "wrd"]
-        long = ["phonemes", "words"]
-        if self.__dict__[subset]["seq_to_words"][-1,-1] == \
-                    self.__dict__[subset]["words_intervals"].shape[0]:
+        check_word = self.__dict__[subset]["seq_to_words"][-1,-1] \
+                == self.__dict__[subset]["words_intervals"].shape[0]
+        check_phone = self.__dict__[subset]["seq_to_phones"][-1,-1] \
+                == self.__dict__[subset]["phones_intervals"].shape[0]
+        
+        if check_word:
             print "OK for words."
         else:
             print "KO for words."
+        
+        if check_phone:
+            print "OK for phones."
+        else:
+            print "KO for phones."
         
         print "Check multinomial constraints..."
         feature_name = ["dialect", "education", "race", "sex"]
@@ -529,6 +545,7 @@ class TIMIT(object):
         
         # Get the sequence
         seq_id = np.digitize([id], self.word_to_seq_intervals)[0] - 1
+        id_in_seq = id - self.word_to_seq_intervals[seq_id]
         if self.shuffle_seq:
             seq_id = self.invert_shuffling[seq_id]
         
@@ -544,7 +561,9 @@ class TIMIT(object):
         # Get the phones, phonemes and words
         phones = self.__dict__[subset]["phones"][wav_start:wav_end]
         phonemes = self.__dict__[subset]["phonemes"][wav_start:wav_end]
-        word = self.__dict__[subset]["words_intervals"][id,2]
+        id_plus_seq = self.__dict__[subset]["seq_to_words"][seq_id,0] \
+                        + id_in_seq
+        word = self.__dict__[subset]["words_intervals"][id_plus_seq,2]
         
         # Find the speaker id
         spkr_id = self.__dict__[subset]["speaker_id"][seq_id]
@@ -590,4 +609,93 @@ class TIMIT(object):
             end_seq = -1
 
         return self.word_to_seq_intervals[end_seq]
+    
+    
+    """
+    This section is about extracting sequences for each phone. 
+    
+    """
+    def init_phones_iter(self, subset, shuffling = True):
+        """
+        Given the subset id, initialize the iterator if need be. 
+        
+        """
+        self.check_subset_value(subset)
+        self.check_subset_presence(subset)
+        
+        # Check if the initialization is needed
+        needed = not hasattr(self, "phone_to_seq_intervals")
+        self.mode = "phones"
+        
+        if not needed:
+            needed = (self.shuffle_seq != shuffling)
+        
+        self.shuffle_seq = shuffling and (subset == "train")
+         
+        if needed:
+            # Compute the required length to build a frame sequence of
+            # fixed size
+            n_phones_per_seq = self.__dict__[subset]["seq_to_phones"][:,1] \
+                            - self.__dict__[subset]["seq_to_phones"][:,0]
+            
+            if self.shuffle_seq:
+                n_phones_per_seq = n_phones_per_seq[self.shuffling]
+            
+            self.phone_to_seq_intervals = np.zeros((n_phones_per_seq.shape[0]+1))
+            self.phone_to_seq_intervals[1:] = np.cumsum(n_phones_per_seq)
+            self.phone_to_seq_intervals = np.asarray(self.phone_to_seq_intervals, dtype="int")
+        
+    def get_phone_seq(self, subset, frame_length, overlap, id, shuffling = True):
+        """
+        Given the subset id, the number of frames wanted, the frame length, 
+        the overlap and the id, return the associated waveform sequence. 
+        
+        """
+        self.init_phones_iter(subset, shuffling)
+        assert id < self.phone_to_seq_intervals[-1]
+        
+        # Get the sequence
+        seq_id = np.digitize([id], self.phone_to_seq_intervals)[0] - 1
+        id_in_seq = id - self.phone_to_seq_intervals[seq_id]
+        if self.shuffle_seq:
+            seq_id = self.invert_shuffling[seq_id]
+        
+        wav_start_in_seq = self.__dict__[subset]["phones_intervals"][id, 0]
+        wav_end_in_seq = self.__dict__[subset]["phones_intervals"][id, 1]
+        wav_start = self.__dict__[subset]["intervals"][seq_id] \
+                    + wav_start_in_seq
+        wav_end = self.__dict__[subset]["intervals"][seq_id] \
+                    + wav_end_in_seq
+        
+        wav = self.__dict__[subset]["wav"][wav_start:wav_end]
+        
+        # Get the phone
+        id_plus_seq = self.__dict__[subset]["seq_to_phones"][seq_id,0] \
+                        + id_in_seq
+        phone = self.__dict__[subset]["phones_intervals"][id_plus_seq,2]
+        
+        # Find the speaker id
+        spkr_id = self.__dict__[subset]["speaker_id"][seq_id]
+        # Find the speaker info
+        spkr_info = self.spkrinfo[spkr_id]
+        
+        # Segment into frames
+        wav = segment_axis(wav, frame_length, overlap)
+        
+        return [wav, phone, spkr_info]
+        
+    
+    def get_n_phones(self, subset, shuffling = True, end_seq = None):
+        """
+        Given the subset id, return the number of sequence in it.
+        
+        """
+        self.check_subset_value(subset)
+        self.check_subset_presence(subset)
+        self.init_phones_iter(subset, shuffling)
+        
+        if end_seq is None:
+            end_seq = -1
+
+        return self.phone_to_seq_intervals[end_seq]
     
