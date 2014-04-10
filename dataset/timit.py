@@ -549,8 +549,12 @@ class TIMIT(object):
         if self.shuffle_seq:
             seq_id = self.invert_shuffling[seq_id]
         
-        wav_start_in_seq = self.__dict__[subset]["words_intervals"][id, 0]
-        wav_end_in_seq = self.__dict__[subset]["words_intervals"][id, 1]
+        id_plus_seq = self.__dict__[subset]["seq_to_words"][seq_id,0] \
+                        + id_in_seq
+        wav_start_in_seq = \
+                self.__dict__[subset]["words_intervals"][id_plus_seq, 0]
+        wav_end_in_seq = \
+                self.__dict__[subset]["words_intervals"][id_plus_seq, 1]
         wav_start = self.__dict__[subset]["intervals"][seq_id] \
                     + wav_start_in_seq
         wav_end = self.__dict__[subset]["intervals"][seq_id] \
@@ -561,8 +565,6 @@ class TIMIT(object):
         # Get the phones, phonemes and words
         phones = self.__dict__[subset]["phones"][wav_start:wav_end]
         phonemes = self.__dict__[subset]["phonemes"][wav_start:wav_end]
-        id_plus_seq = self.__dict__[subset]["seq_to_words"][seq_id,0] \
-                        + id_in_seq
         word = self.__dict__[subset]["words_intervals"][id_plus_seq,2]
         
         # Find the speaker id
@@ -660,8 +662,12 @@ class TIMIT(object):
         if self.shuffle_seq:
             seq_id = self.invert_shuffling[seq_id]
         
-        wav_start_in_seq = self.__dict__[subset]["phones_intervals"][id, 0]
-        wav_end_in_seq = self.__dict__[subset]["phones_intervals"][id, 1]
+        id_plus_seq = self.__dict__[subset]["seq_to_phones"][seq_id,0] \
+                        + id_in_seq
+        wav_start_in_seq = \
+                self.__dict__[subset]["phones_intervals"][id_plus_seq, 0]
+        wav_end_in_seq = \
+                self.__dict__[subset]["phones_intervals"][id_plus_seq, 1]
         wav_start = self.__dict__[subset]["intervals"][seq_id] \
                     + wav_start_in_seq
         wav_end = self.__dict__[subset]["intervals"][seq_id] \
@@ -670,8 +676,6 @@ class TIMIT(object):
         wav = self.__dict__[subset]["wav"][wav_start:wav_end]
         
         # Get the phone
-        id_plus_seq = self.__dict__[subset]["seq_to_phones"][seq_id,0] \
-                        + id_in_seq
         phone = self.__dict__[subset]["phones_intervals"][id_plus_seq,2]
         
         # Find the speaker id
